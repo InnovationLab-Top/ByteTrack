@@ -7,6 +7,8 @@ import numpy as np
 
 __all__ = ["vis"]
 
+ARROW_LENGTH = 100
+MOVING_THRESHOLD = 10
 
 def vis(img, boxes, scores, cls_ids, conf=0.5, class_names=None):
 
@@ -48,8 +50,18 @@ def get_color(idx):
 
     return color
 
+def get_endpoint(x1, y1, coef, first_last):
+    angle = np.arctan(coef)
+    magnitude = ARROW_LENGTH
+    if first_last[0][0] - first_last[1][0] > 0:
+        magnitude *= -1 
+    
+    x2 = x1 + magnitude * np.cos(angle)
+    y2 = y1 + magnitude * np.sin(angle)
 
-def plot_tracking(image, tlwhs, obj_ids, scores=None, frame_id=0, fps=0., ids2=None):
+    return x2, y2
+
+def plot_tracking(image, tlwhs, obj_ids, regs, first_last, scores=None, frame_id=0, fps=0., ids2=None):
     im = np.ascontiguousarray(np.copy(image))
     im_h, im_w = im.shape[:2]
 
@@ -66,6 +78,7 @@ def plot_tracking(image, tlwhs, obj_ids, scores=None, frame_id=0, fps=0., ids2=N
     cv2.putText(im, 'frame: %d fps: %.2f num: %d' % (frame_id, fps, len(tlwhs)),
                 (0, int(15 * text_scale)), cv2.FONT_HERSHEY_PLAIN, 2, (0, 0, 255), thickness=2)
 
+    x_pred, y_pred = None, None
     for i, tlwh in enumerate(tlwhs):
         x1, y1, w, h = tlwh
         intbox = tuple(map(int, (x1, y1, x1 + w, y1 + h)))
@@ -75,6 +88,16 @@ def plot_tracking(image, tlwhs, obj_ids, scores=None, frame_id=0, fps=0., ids2=N
             id_text = id_text + ', {}'.format(int(ids2[i]))
         color = get_color(abs(obj_id))
         cv2.rectangle(im, intbox[0:2], intbox[2:4], color=color, thickness=line_thickness)
+
+        # draw trajectory lines
+        if regs[obj_id] != [None]:
+            if np.linalg.norm(first_last[obj_id][0] - first_last[obj_id][1], 2) > MOVING_THRESHOLD:
+
+                xc, yc = x1 + w / 2, y1 + h / 2 
+                coef, intercept = regs[obj_id]
+                x2, y2 = get_endpoint(xc, yc, coef, first_last[obj_id])
+                cv2.arrowedLine(im, (int(xc), int(yc)), (int(x2), int(y2)), color=color, thickness=line_thickness)
+
         cv2.putText(im, id_text, (intbox[0], intbox[1]), cv2.FONT_HERSHEY_PLAIN, text_scale, (0, 0, 255),
                     thickness=text_thickness)
     return im
